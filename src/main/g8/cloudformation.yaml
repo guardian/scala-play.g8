@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: $project_description$
+Parameters:
+    Stack:
+        Description: 'Stack name'
+        Type: String
+        AllowedValues:
+            - $stack_name_prefix$-$name$
+        Default: $stack_name_prefix$-$name$
+    Stage:
+        Description: 'Environment name'
+        Type: String
+        Default: CODE
+    VPC:
+        Description: 'Virtual Private Cloud to run EC2 instances within'
+        Type: AWS::EC2::VPC::Id
+    Subnets:
+        Description: 'Subnets to run load balancer within'
+        Type: List<AWS::EC2::Subnet::Id>
+    AMI:
+        Description: 'AMI ID'
+        Type: String
+
+Conditions:
+    IsProd: !Equals [ !Ref Stage, PROD ]
+
+Resources:
+    RootRole:
+        Type: AWS::IAM::Role
+        Properties:
+            Path: /
+            AssumeRolePolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Principal: { Service: [ 'ec2.amazonaws.com' ] }
+                      Action: [ 'sts:AssumeRole' ]
+
+    AppPolicy:
+        Type: AWS::IAM::Policy
+        Properties:
+            Roles: 
+                - !Ref RootRole
+            PolicyName: $stack_name_prefix$-$name$-app
+            PolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Action: ['s3:GetObject']
+                      Resource:
+                        - arn:aws:s3:::$stack_name_prefix$-dist/*
+
+    InstanceProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Path: /
+            Roles:
+                - !Ref RootRole
+
+    LoadBalancer:
+        Type: AWS::ElasticLoadBalancing::LoadBalancer
+        Properties:
+            Scheme: internet-facing
+            SecurityGroups:
+                - !Ref LoadBalancerSecurityGroup
+            Subnets: !Ref Subnets
+            CrossZone: true
+            Listeners:
+                - Protocol: HTTP
+                  LoadBalancerPort: 80
+                  InstancePort: 9000
+            HealthCheck:
+                Target: HTTP:9000/healthcheck
+                Timeout: 5
+                Interval: 10
+                UnhealthyThreshold: 2
+                HealthyThreshold: 2
+            Tags:
+                - Key: Stack
+                  Value: !Ref Stack
+                - Key: Stage
+                  Value: !Ref Stage
+                - Key: App
+                  Value: $name$
+
+    AutoscalingGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties:
+            VPCZoneIdentifier: !Ref Subnets
+            AvailabilityZones: { 'Fn::GetAZs': '' }
+            LaunchConfigurationName: !Ref LaunchConfig
+            MinSize: 1
+            MaxSize: 2
+            DesiredCapacity: 1
+            HealthCheckType: ELB
+            HealthCheckGracePeriod: 900
+            LoadBalancerNames:
+                - !Ref LoadBalancer
+            Tags:
+                - Key: Stack
+                  Value: !Ref Stack
+                  PropagateAtLaunch: true
+                - Key: Stage
+                  Value: !Ref Stage
+                  PropagateAtLaunch: true
+                - Key: App
+                  Value: $name$
+                  PropagateAtLaunch: true
+
+    LaunchConfig:
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties:
+            ImageId: !Ref AMI
+            AssociatePublicIpAddress: true
+            SecurityGroups:
+                - !Ref ApplicationSecurityGroup
+            InstanceType: t2.micro
+            IamInstanceProfile: !Ref InstanceProfile
+            UserData:
+                Fn::Base64:
+                    !Sub |
+                        #!/bin/bash -ev
+
+                        # Add your specific setup and commands to be run when instance comes up.
+
+
+    LoadBalancerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: 'Restricted access (given Guardian IP Range) to the load balancer on port 80'
+            VpcId: !Ref VPC
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: 77.91.248.0/21
+            SecurityGroupEgress:
+                - IpProtocol: tcp
+                  FromPort: 9000
+                  ToPort: 9000
+                  CidrIp: 0.0.0.0/0
+
+    ApplicationSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: 'SSH and HTTP'
+            VpcId: !Ref VPC
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  FromPort: 9000
+                  ToPort: 9000
+                  SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+                - IpProtocol: tcp
+                  FromPort: 9000
+                  ToPort: 9000
+                  CidrIp: 77.91.248.0/21
+                - IpProtocol: tcp
+                  FromPort: 22
+                  ToPort: 22
+                  CidrIp: 77.91.248.0/21
+
+Outputs:
+    LoadBalancer:
+        Value: !GetAtt LoadBalancer.DNSName
