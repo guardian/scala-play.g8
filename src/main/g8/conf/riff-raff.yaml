@@ -17,3 +17,4 @@ deployments:
       prependStackToCloudFormationStackName: false
       appendStageToCloudFormationStackName: true
       cloudFormationStackByTags: false
+    dependencies: [$name$]
