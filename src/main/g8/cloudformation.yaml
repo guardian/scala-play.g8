@@ -117,6 +117,8 @@ Resources:
                 Fn::Base64:
                     !Sub |
                         #!/bin/bash -ev
+                        aws --region \${AWS::Region} s3 cp s3://\${Stack}-dist/\${Stack}/\${Stage}/$name$/$name$_0.1-SNAPSHOT_all.deb /tmp
+                        dpkg -i /tmp/$name$_0.1-SNAPSHOT_all.deb
 
                         # Add your specific setup and commands to be run when instance comes up.
 

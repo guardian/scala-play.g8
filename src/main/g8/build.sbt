@@ -25,16 +25,14 @@ scalacOptions ++= Seq(
 
 scalacOptions in doc in Compile := Nil
 
-lazy val root = (project in file(".")).enablePlugins(PlayScala, RiffRaffArtifact, JavaAppPackaging, UniversalPlugin)
+enablePlugins(PlayScala, RiffRaffArtifact, JDebPackaging)
 
 mappings in Universal ++= (baseDirectory.value / "resources" *** ).get pair relativeTo(baseDirectory.value)
 
-riffRaffPackageType := (packageZipTarball in config("universal")).value
+riffRaffPackageType := (packageBin in Debian).value
 riffRaffUploadArtifactBucket := Option("riffraff-artifact")
 riffRaffUploadManifestBucket := Option("riffraff-builds")
 riffRaffManifestProjectName := "$riffRaff_manifest_project_name$"
-
-addCommandAlias("dist", ";riffRaffArtifact")
 
 resolvers += "Sonatype releases" at "https://oss.sonatype.org/content/repositories/releases"
 
@@ -46,6 +44,24 @@ libraryDependencies ++= Seq(
 )
 
 routesGenerator := InjectedRoutesGenerator
+
+import com.typesafe.sbt.packager.archetypes.ServerLoader.Systemd
+serverLoading in Debian := Systemd
+
+debianPackageDependencies := Seq("openjdk-8-jre-headless")
+maintainer := "Guardian Developers <dig.dev.software@theguardian.com>"
+packageSummary := description.value
+packageDescription := description.value
+
+javaOptions in Universal ++= Seq(
+    "-Dpidfile.path=/dev/null",
+    "-J-XX:MaxRAMFraction=2",
+    "-J-XX:InitialRAMFraction=2",
+    "-J-XX:MaxMetaspaceSize=500m",
+    "-J-XX:+PrintGCDetails",
+    "-J-XX:+PrintGCDateStamps",
+    s"-J-Xloggc:/var/log/\${packageName.value}/gc.log"
+)
 
 initialize := {
   val _ = initialize.value
